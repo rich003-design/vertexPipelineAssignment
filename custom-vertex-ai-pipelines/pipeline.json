@@ -1,0 +1,88 @@
+{
+  "components": {
+    "comp-train-model-op": {
+      "executorLabel": "exec-train-model-op",
+      "inputDefinitions": {
+        "parameters": {
+          "model_output_path": {
+            "parameterType": "STRING"
+          },
+          "training_data_path": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    }
+  },
+  "defaultPipelineRoot": "gs://mlworkflow_kubeflowbucket/vertex-pipeline-root",
+  "deploymentSpec": {
+    "executors": {
+      "exec-train-model-op": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "train_model_op"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn' 'joblib' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef train_model_op(training_data_path: str, model_output_path: str):\n    import pandas as pd\n    from sklearn.linear_model import LogisticRegression\n    import joblib\n    try:\n        # Dummy training for demonstration:\n        print(\"Reading training data from:\", training_data_path)\n        data = pd.read_csv(training_data_path)\n        print(\"Successfully read the data. Columns:\", data.columns)\n\n        # Check if the expected column 'target' exists\n        if \"target\" not in data.columns:\n            raise ValueError(\"Expected column 'target' not found in the training data.\")\n\n        X = data.drop(\"target\", axis=1)\n        y = data[\"target\"]\n        print(\"Training model...\")\n\n        model = LogisticRegression()\n        model.fit(X, y)\n        print(\"Model training completed.\")\n\n        print(\"Saving model to:\", model_output_path)\n        joblib.dump(model, model_output_path)\n        print(\"Training complete. Model saved successfully.\")\n\n    except Exception as e:\n        print(\"An error occurred in train_model_op:\")\n        print(e)\n        # Optionally, you can log more detailed traceback information\n        import traceback\n        traceback.print_exc()\n        # Re-raise the exception so that the pipeline run fails with a clear error message.\n        raise\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "name": "sample-vertex-ai-pipeline"
+  },
+  "root": {
+    "dag": {
+      "tasks": {
+        "train-model-op": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-train-model-op"
+          },
+          "inputs": {
+            "parameters": {
+              "model_output_path": {
+                "componentInputParameter": "model_output_path"
+              },
+              "training_data_path": {
+                "componentInputParameter": "training_data_path"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "train-model-op"
+          }
+        }
+      }
+    },
+    "inputDefinitions": {
+      "parameters": {
+        "model_output_path": {
+          "defaultValue": "gs://mlworkflow_kubeflowbucket/model/model.joblib",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "training_data_path": {
+          "defaultValue": "gs://mlworkflow_kubeflowbucket/data/train.csv",
+          "isOptional": true,
+          "parameterType": "STRING"
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.11.0"
+}
